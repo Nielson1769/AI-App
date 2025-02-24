@@ -8,3 +8,5 @@ setuptools==75.8.0
 streamlit
 transformers
 torch
+openai
+
