@@ -1,141 +1,86 @@
-import os
-import logging
 import streamlit as st
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 
-# ------------------------------
-# Logging Configuration
-# ------------------------------
-logging.basicConfig(
-    filename='app.log',
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s: %(message)s'
-)
+# Streamlit UI Title
+st.title("🧠 AI Model Playground")
+st.sidebar.header("Model Settings")
 
-# ------------------------------
-# Simple Authentication
-# ------------------------------
-def login():
-    st.title("Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        # For demonstration, use fixed credentials. Replace with your own authentication.
-        if username == "admin" and password == "password":
-            st.session_state['authenticated'] = True
-            st.success("Logged in successfully!")
-            logging.info("User %s logged in successfully.", username)
-        else:
-            st.error("Invalid credentials.")
-            logging.warning("Failed login attempt for user %s", username)
+# 🔹 Model Selection Dropdown
+model_option = st.sidebar.selectbox("Select AI Model", [
+    "GPT-4 (OpenAI API)",  
+    "DeepSeek-7B",  
+    "Mistral-7B",  
+    "LLaMA-2-13B",  
+    "GPT-J-6B",  
+    "Gemma-7B",  
+    "Zephyr-7B",  
+    "MPT-7B",  
+    "StableLM-7B",  
+    "RedPajama-7B",  
+    "Phi-2"
+])
 
-if 'authenticated' not in st.session_state:
-    st.session_state['authenticated'] = False
+# 🔹 Function to Map Model Names to Hugging Face Paths
+def choose_model(selection: str):
+    model_mapping = {
+        "GPT-4 (OpenAI API)": None,  # Requires OpenAI API key
+        "DeepSeek-7B": "deepseek-ai/deepseek-llm-7b",  
+        "Mistral-7B": "mistralai/Mistral-7B",  
+        "LLaMA-2-13B": "meta-llama/Llama-2-13b",  
+        "GPT-J-6B": "EleutherAI/gpt-j-6B",  
+        "Gemma-7B": "google/gemma-7b",  
+        "Zephyr-7B": "HuggingFaceH4/zephyr-7b-beta",  
+        "MPT-7B": "mosaicml/mpt-7b",  
+        "StableLM-7B": "stabilityai/stablelm-7b",  
+        "RedPajama-7B": "togethercomputer/RedPajama-INCITE-7B",  
+        "Phi-2": "microsoft/phi-2"
+    }
+    return model_mapping.get(selection, "gpt2")  # Default to GPT-2 if invalid
 
-if not st.session_state['authenticated']:
-    login()
-    st.stop()
-
-# ------------------------------
-# Sidebar: Settings and Controls
-# ------------------------------
-st.sidebar.header("Settings")
-
-# Internet Access Toggle
-internet_enabled = st.sidebar.checkbox("Enable Internet Access", value=False)
-if internet_enabled:
-    os.environ["ALLOW_INTERNET"] = "true"
-    st.sidebar.success("Internet Access Enabled")
-else:
-    os.environ["ALLOW_INTERNET"] = "false"
-    st.sidebar.error("Internet Access Disabled")
-
-# Model Selection: Automatic, GPT-2, or GPT-Neo
-model_option = st.sidebar.selectbox("Select Model", ["Automatic", "GPT-2", "GPT-Neo"])
-
-# ------------------------------
-# Model Loading (Cached)
-# ------------------------------
+# 🔹 Load Model and Tokenizer (With GPU Optimization)
 @st.cache_resource
 def load_model(model_id: str):
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
-        model = AutoModelForCausalLM.from_pretrained(model_id)
-        if torch.cuda.is_available():
-            model.to("cuda")
-        logging.info("Loaded model: %s", model_id)
-        return tokenizer, model
-    except Exception as e:
-        logging.error("Error loading model %s: %s", model_id, e)
-        st.error("Failed to load the model. Check logs for details.")
+    if model_id is None:
+        st.error("GPT-4 requires an API key. Support for OpenAI API will be added soon.")
         return None, None
 
-# ------------------------------
-# Helper: Choose Model Based on Prompt & Selection
-# ------------------------------
-def choose_model(prompt: str, selection: str):
-    if selection == "Automatic":
-        # Use GPT-2 for short prompts; GPT-Neo for longer ones.
-        return "gpt2" if len(prompt.split()) < 20 else "EleutherAI/gpt-neo-125M"
-    elif selection == "GPT-2":
-        return "gpt2"
-    else:
-        return "EleutherAI/gpt-neo-125M"
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,  # Use GPU acceleration
+            device_map="auto" if torch.cuda.is_available() else None  # Moves model to GPU if available
+        )
+        return tokenizer, model
+    except Exception as e:
+        st.error(f"Error loading {model_id}: {e}")
+        return None, None
 
-# ------------------------------
-# Conversation History Initialization
-# ------------------------------
-if 'history' not in st.session_state:
-    st.session_state['history'] = []
+# Select and Load the Model
+model_id = choose_model(model_option)
+tokenizer, model = load_model(model_id)
 
-# ------------------------------
-# Main Application Interface
-# ------------------------------
-st.title("Enhanced LM Studio AI Interface")
-st.write("Welcome! Enter a prompt to generate a response. All actions are logged, and conversation history is saved below.")
+# 🔹 User Input Box
+user_input = st.text_area("Enter your prompt:", "Hello, AI!")
 
-# Input prompt
-prompt = st.text_area("Enter your prompt:", height=150)
-
+# 🔹 Generate Response
 if st.button("Generate Response"):
-    if not prompt.strip():
-        st.error("Please enter a prompt.")
+    if model and tokenizer:
+        inputs = tokenizer(user_input, return_tensors="pt")
+        
+        # Move inputs to GPU if available
+        if torch.cuda.is_available():
+            inputs = {k: v.to("cuda") for k, v in inputs.items()}
+
+        with torch.no_grad():
+            output = model.generate(**inputs, max_new_tokens=150)
+        
+        response_text = tokenizer.decode(output[0], skip_special_tokens=True)
+        st.subheader("AI Response:")
+        st.write(response_text)
     else:
-        with st.spinner("Generating response..."):
-            try:
-                # Determine which model to use.
-                model_id = choose_model(prompt, model_option)
-                tokenizer, model = load_model(model_id)
-                if tokenizer is None or model is None:
-                    st.error("Model loading failed. See logs for details.")
-                else:
-                    # Encode the prompt and generate a response.
-                    input_ids = tokenizer.encode(prompt, return_tensors="pt")
-                    if torch.cuda.is_available():
-                        input_ids = input_ids.to("cuda")
-                    output = model.generate(input_ids, max_length=150)
-                    response = tokenizer.decode(output[0], skip_special_tokens=True)
-                    st.success("Response generated!")
-                    st.write("**Response:**")
-                    st.write(response)
-                    # Log and save the conversation.
-                    st.session_state['history'].append((prompt, response))
-                    logging.info("Generated response for prompt: %s", prompt)
-            except Exception as e:
-                st.error("An error occurred during response generation.")
-                logging.error("Error during inference: %s", e)
+        st.error("Model failed to load. Please check logs or try a different model.")
 
-# Display conversation history.
-if st.session_state['history']:
-    st.subheader("Conversation History")
-    for idx, (q, a) in enumerate(reversed(st.session_state['history'])):
-        st.markdown(f"**Q: {q}**")
-        st.markdown(f"**A: {a}**")
-        st.write("---")
-
-# Clear history button.
-if st.button("Clear History"):
-    st.session_state['history'] = []
-    st.success("Conversation history cleared.")
-    logging.info("Conversation history cleared.")
+# Display Footer
+st.sidebar.info("🔹 AI Model Playground - Powered by Hugging Face & Streamlit")
