@@ -5,8 +5,9 @@ import os
 import re
 import logging
 
-# ✅ Fix: Correct logger level setting
-st.set_option('logger.level', 'error')
+# ✅ Fix: Correct logging setup (instead of using st.set_option)
+logging.basicConfig(level=logging.ERROR)
+logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 # ✅ Fix: Check if running locally or on Streamlit Cloud
 IS_LOCAL = os.getenv("STREAMLIT_SERVER") is None  # Streamlit Cloud sets this variable
@@ -37,7 +38,7 @@ model_option = st.sidebar.selectbox("Select AI Model", [
     "GPT-4 (OpenAI API)",  
     "DeepSeek-7B",  
     "Mistral-7B",  
-    "LLaMA--2-13B",  
+    "LLaMA-2-13B",  
     "GPT-J-6B",  
     "Gemma-7B",  
     "Zephyr-7B",  
