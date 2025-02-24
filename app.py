@@ -5,35 +5,39 @@ import os
 import re
 import logging
 
-# 🔹 Disable logging for privacy
-logging.disable(logging.CRITICAL)
-st.set_option('logger.level', 'CRITICAL')
+# ✅ Fix: Correct logger level setting
+st.set_option('logger.level', 'error')
 
-# 🔹 Sidebar toggle to control internet access
-internet_access = st.sidebar.checkbox("Enable Internet Access", value=False)
+# ✅ Fix: Check if running locally or on Streamlit Cloud
+IS_LOCAL = os.getenv("STREAMLIT_SERVER") is None  # Streamlit Cloud sets this variable
 
-def toggle_internet_access(enable: bool):
-    """Enable or disable internet access for AI models."""
-    if enable:
-        if "HTTP_PROXY" in os.environ:
-            del os.environ["HTTP_PROXY"]
-        if "HTTPS_PROXY" in os.environ:
-            del os.environ["HTTPS_PROXY"]
-        st.sidebar.success("Internet access enabled.")
-    else:
-        os.environ["HTTP_PROXY"] = ""
-        os.environ["HTTPS_PROXY"] = ""
-        st.sidebar.warning("Internet access disabled.")
-
-# Apply internet settings based on user selection
-toggle_internet_access(internet_access)
+# ✅ Fix: Only modify os.environ for local use
+if IS_LOCAL:
+    internet_access = st.sidebar.checkbox("Enable Internet Access", value=False)
+    
+    def toggle_internet_access(enable: bool):
+        """Enable or disable internet access for AI models."""
+        if enable:
+            if "HTTP_PROXY" in os.environ:
+                del os.environ["HTTP_PROXY"]
+            if "HTTPS_PROXY" in os.environ:
+                del os.environ["HTTPS_PROXY"]
+            st.sidebar.success("Internet access enabled.")
+        else:
+            os.environ["HTTP_PROXY"] = ""
+            os.environ["HTTPS_PROXY"] = ""
+            st.sidebar.warning("Internet access disabled.")
+    
+    toggle_internet_access(internet_access)
+else:
+    st.sidebar.warning("Internet access settings cannot be changed on Streamlit Cloud.")
 
 # 🔹 Model selection dropdown
 model_option = st.sidebar.selectbox("Select AI Model", [
     "GPT-4 (OpenAI API)",  
     "DeepSeek-7B",  
     "Mistral-7B",  
-    "LLaMA-2-13B",  
+    "LLaMA--2-13B",  
     "GPT-J-6B",  
     "Gemma-7B",  
     "Zephyr-7B",  
