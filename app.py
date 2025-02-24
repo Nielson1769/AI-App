@@ -57,7 +57,7 @@ model_option = st.sidebar.selectbox("Select Model", ["Automatic", "GPT-2", "GPT-
 # ------------------------------
 # Model Loading (Cached)
 # ------------------------------
-@st.cache(allow_output_mutation=True)
+@st.cache_resource
 def load_model(model_id: str):
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_id)
