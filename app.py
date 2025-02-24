@@ -1,12 +1,34 @@
 import streamlit as st
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
+import os
+import re
+import logging
 
-# Streamlit UI Title
-st.title("🧠 AI Model Playground")
-st.sidebar.header("Model Settings")
+# 🔹 Disable logging for privacy
+logging.disable(logging.CRITICAL)
+st.set_option('logger.level', 'CRITICAL')
 
-# 🔹 Model Selection Dropdown
+# 🔹 Sidebar toggle to control internet access
+internet_access = st.sidebar.checkbox("Enable Internet Access", value=False)
+
+def toggle_internet_access(enable: bool):
+    """Enable or disable internet access for AI models."""
+    if enable:
+        if "HTTP_PROXY" in os.environ:
+            del os.environ["HTTP_PROXY"]
+        if "HTTPS_PROXY" in os.environ:
+            del os.environ["HTTPS_PROXY"]
+        st.sidebar.success("Internet access enabled.")
+    else:
+        os.environ["HTTP_PROXY"] = ""
+        os.environ["HTTPS_PROXY"] = ""
+        st.sidebar.warning("Internet access disabled.")
+
+# Apply internet settings based on user selection
+toggle_internet_access(internet_access)
+
+# 🔹 Model selection dropdown
 model_option = st.sidebar.selectbox("Select AI Model", [
     "GPT-4 (OpenAI API)",  
     "DeepSeek-7B",  
@@ -21,7 +43,7 @@ model_option = st.sidebar.selectbox("Select AI Model", [
     "Phi-2"
 ])
 
-# 🔹 Function to Map Model Names to Hugging Face Paths
+# 🔹 Function to map selected model to Hugging Face model ID
 def choose_model(selection: str):
     model_mapping = {
         "GPT-4 (OpenAI API)": None,  # Requires OpenAI API key
@@ -38,7 +60,10 @@ def choose_model(selection: str):
     }
     return model_mapping.get(selection, "gpt2")  # Default to GPT-2 if invalid
 
-# 🔹 Load Model and Tokenizer (With GPU Optimization)
+# 🔹 Load Hugging Face API Token (for private models)
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN", "hf_your_token_here")
+
+# 🔹 Load Model with GPU Optimization
 @st.cache_resource
 def load_model(model_id: str):
     if model_id is None:
@@ -46,9 +71,10 @@ def load_model(model_id: str):
         return None, None
 
     try:
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        tokenizer = AutoTokenizer.from_pretrained(model_id, token=HUGGINGFACE_TOKEN)
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
+            token=HUGGINGFACE_TOKEN,
             torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,  # Use GPU acceleration
             device_map="auto" if torch.cuda.is_available() else None  # Moves model to GPU if available
         )
@@ -61,26 +87,47 @@ def load_model(model_id: str):
 model_id = choose_model(model_option)
 tokenizer, model = load_model(model_id)
 
+# 🔹 Function to Filter Out Sensitive Data
+def filter_sensitive_data(text):
+    """Redacts personal information before displaying/sending data."""
+    sensitive_patterns = [
+        r"\b\d{3}-\d{2}-\d{4}\b",  # Social Security Number (SSN)
+        r"\b\d{10}\b",  # Phone number
+        r"\b\d{4} \d{4} \d{4} \d{4}\b",  # Credit card numbers
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b",  # Emails
+        r"\b\d{1,2}/\d{1,2}/\d{4}\b",  # Dates (e.g., birthdays)
+        r"\b\d{5}(-\d{4})?\b"  # ZIP codes
+    ]
+
+    for pattern in sensitive_patterns:
+        text = re.sub(pattern, "[REDACTED]", text)
+
+    return text
+
 # 🔹 User Input Box
 user_input = st.text_area("Enter your prompt:", "Hello, AI!")
 
-# 🔹 Generate Response
+# 🔹 Generate AI Response
 if st.button("Generate Response"):
     if model and tokenizer:
         inputs = tokenizer(user_input, return_tensors="pt")
-        
+
         # Move inputs to GPU if available
         if torch.cuda.is_available():
             inputs = {k: v.to("cuda") for k, v in inputs.items()}
 
         with torch.no_grad():
             output = model.generate(**inputs, max_new_tokens=150)
-        
+
         response_text = tokenizer.decode(output[0], skip_special_tokens=True)
+
+        # Apply privacy filter before displaying
+        response_text = filter_sensitive_data(response_text)
+
         st.subheader("AI Response:")
         st.write(response_text)
     else:
         st.error("Model failed to load. Please check logs or try a different model.")
 
 # Display Footer
-st.sidebar.info("🔹 AI Model Playground - Powered by Hugging Face & Streamlit")
+st.sidebar.info("🔹 AI Model Playground - Secure & Private")
